@@ -229,7 +229,7 @@ def parse_trademark_details(document_path: str) -> List[Dict[str, Union[str, Lis
 
     return trademark_list
 
-def compare_trademarks(existing_trademark: List[Dict[str, Union[str, List[int]]]], proposed_name: str, proposed_class: str, proposed_goods_services: str) -> List[Dict[str, int]]:
+def compare_trademarks(extracted_trademarks: List[Dict[str, Union[str, List[int]]]], proposed_name: str, proposed_class: str, proposed_goods_services: str) -> List[Dict[str, int]]:
     proposed_classes = [int(c.strip()) for c in proposed_class.split(',')]
     response_reasoning = openai.ChatCompletion.create(
         engine=deployment_name,
@@ -272,7 +272,6 @@ def compare_trademarks(existing_trademark: List[Dict[str, Union[str, List[int]]]
                                             Goods/Services: {existing_trademark['goods_services']}\n
                                             International Class Numbers: {existing_trademark['international_class_number']}\n
                                             Status: {existing_trademark['status']}\n
-                                            Owner: {existing_trademark['owner']}\n
                                             Proposed Trademark:\n
                                             Name: {proposed_name}\n 
                                             Goods/Services: {proposed_goods_services}\n
@@ -287,10 +286,8 @@ def compare_trademarks(existing_trademark: List[Dict[str, Union[str, List[int]]]
     conflict_grade = reasoning.split("Conflict Grade:", 1)[1].strip() 
 
     return {
-        'Trademark name': existing_trademark['trademark_name'],
-        'Trademark status': existing_trademark['status'],
-        'Trademark owner': existing_trademark['owner'],
-        'Trademark class Number': existing_trademark['international_class_number'],
+        'existing_trademark': existing_trademark['trademark_name'],
+        'proposed_trademark': proposed_name,
         'conflict_grade': conflict_grade,
         'reasoning': reasoning
     }
@@ -358,10 +355,7 @@ if uploaded_file is not None:
                         
             st.subheader(f"\nTotal number of High Conflicts: {len(high_conflicts)}\n")
             for conflict in high_conflicts:
-                st.write(f"Trademark Name: {conflict['trademark_name']}\n")
-                st.write(f"Trademark Status: {existing_trademark['status']}\n")
-                st.write(f"Trademark Owner: {existing_trademark['owner']}\n")
-                st.write(f"Trademark Class Number: {existing_trademark['international_class_number']}\n")
+                st.write(f"Existing Trademark: {conflict['existing_trademark']}, Proposed Trademark: {conflict['proposed_trademark']}")
                 st.write(f"Reasoning for Conflict: {conflict['reasoning']}\n")
                 st.write("                                                                                   ")
                 st.write("-----------------------------------------------------------------------------------------------------------------------------------------------------")
@@ -369,10 +363,7 @@ if uploaded_file is not None:
 
             st.subheader(f"\nTotal number of Moderate Conflicts: {len(moderate_conflicts)}\n")
             for conflict in moderate_conflicts:
-                st.write(f"Trademark Name: {conflict['trademark_name']}\n")
-                st.write(f"Trademark Status: {existing_trademark['status']}\n")
-                st.write(f"Trademark Owner: {existing_trademark['owner']}\n")
-                st.write(f"Trademark Class Number: {existing_trademark['international_class_number']}\n")
+                st.write(f"Existing Trademark: {conflict['existing_trademark']}, Proposed Trademark: {conflict['proposed_trademark']}")
                 st.write(f"Reasoning for Conflict: {conflict['reasoning']}\n")
                 st.write("                                                                                   ")
                 st.write("-----------------------------------------------------------------------------------------------------------------------------------------------------")
@@ -380,10 +371,7 @@ if uploaded_file is not None:
 
             st.subheader(f"\nTotal number of Low Conflicts: {len(low_conflicts)}\n")
             for conflict in low_conflicts:
-                st.write(f"Trademark Name: {conflict['trademark_name']}\n")
-                st.write(f"Trademark Status: {existing_trademark['status']}\n")
-                st.write(f"Trademark Owner: {existing_trademark['owner']}\n")
-                st.write(f"Trademark Class Number: {existing_trademark['international_class_number']}\n")
+                st.write(f"Existing Trademark: {conflict['existing_trademark']}, Proposed Trademark: {conflict['proposed_trademark']}")
                 st.write(f"Reasoning for Conflict: {conflict['reasoning']}\n")
                 st.write("                                                                                   ")
                 st.write("-----------------------------------------------------------------------------------------------------------------------------------------------------")
