@@ -229,7 +229,7 @@ def parse_trademark_details(document_path: str) -> List[Dict[str, Union[str, Lis
 
     return trademark_list
 
-def compare_trademarks(extracted_trademarks: List[Dict[str, Union[str, List[int]]]], proposed_name: str, proposed_class: str, proposed_goods_services: str) -> List[Dict[str, int]]:
+def compare_trademarks(existing_trademark: List[Dict[str, Union[str, List[int]]]], proposed_name: str, proposed_class: str, proposed_goods_services: str) -> List[Dict[str, int]]:
     proposed_classes = [int(c.strip()) for c in proposed_class.split(',')]
     response_reasoning = openai.ChatCompletion.create(
         engine=deployment_name,
@@ -272,6 +272,7 @@ def compare_trademarks(extracted_trademarks: List[Dict[str, Union[str, List[int]
                                             Goods/Services: {existing_trademark['goods_services']}\n
                                             International Class Numbers: {existing_trademark['international_class_number']}\n
                                             Status: {existing_trademark['status']}\n
+                                            Owner: {existing_trademark['owner']}\n
                                             Proposed Trademark:\n
                                             Name: {proposed_name}\n 
                                             Goods/Services: {proposed_goods_services}\n
@@ -286,8 +287,10 @@ def compare_trademarks(extracted_trademarks: List[Dict[str, Union[str, List[int]
     conflict_grade = reasoning.split("Conflict Grade:", 1)[1].strip() 
 
     return {
-        'existing_trademark': existing_trademark['trademark_name'],
-        'proposed_trademark': proposed_name,
+        'Trademark name': existing_trademark['trademark_name'],
+        'Trademark status': existing_trademark['status'],
+        'Trademark owner': existing_trademark['owner'],
+        'Trademark class Number': existing_trademark['international_class_number'],
         'conflict_grade': conflict_grade,
         'reasoning': reasoning
     }
@@ -355,24 +358,33 @@ if uploaded_file is not None:
                         
             st.subheader(f"\nTotal number of High Conflicts: {len(high_conflicts)}\n")
             for conflict in high_conflicts:
-                st.write(f"Existing Trademark: {conflict['existing_trademark']}, Proposed Trademark: {conflict['proposed_trademark']}")
-                st.write(f"Reasoning for Conflict: {conflict['reasoning']}\n")
+                st.write(f"Trademark Name : {conflict.get('Trademark name', 'N/A')}")
+                st.write(f"Trademark Status : {conflict.get('Trademark status', 'N/A')}")
+                st.write(f"Trademark Owner : {conflict.get('Trademark owner', 'N/A')}")
+                st.write(f"Trademark Class Number : {conflict.get('Trademark class Number', 'N/A')}")
+                st.write(f"{conflict.get('reasoning','N/A')}\n")
                 st.write("                                                                                   ")
                 st.write("-----------------------------------------------------------------------------------------------------------------------------------------------------")
             st.write("___________________________________________________________________________________________________________________________________________________________________________________")
 
             st.subheader(f"\nTotal number of Moderate Conflicts: {len(moderate_conflicts)}\n")
             for conflict in moderate_conflicts:
-                st.write(f"Existing Trademark: {conflict['existing_trademark']}, Proposed Trademark: {conflict['proposed_trademark']}")
-                st.write(f"Reasoning for Conflict: {conflict['reasoning']}\n")
+                st.write(f"Trademark Name : {conflict.get('Trademark name', 'N/A')}")
+                st.write(f"Trademark Status : {conflict.get('Trademark status', 'N/A')}")
+                st.write(f"Trademark Owner : {conflict.get('Trademark owner', 'N/A')}")
+                st.write(f"Trademark Class Number : {conflict.get('Trademark class Number', 'N/A')}")
+                st.write(f"{conflict.get('reasoning','N/A')}\n")
                 st.write("                                                                                   ")
                 st.write("-----------------------------------------------------------------------------------------------------------------------------------------------------")
             st.write("___________________________________________________________________________________________________________________________________________________________________________________")
 
             st.subheader(f"\nTotal number of Low Conflicts: {len(low_conflicts)}\n")
             for conflict in low_conflicts:
-                st.write(f"Existing Trademark: {conflict['existing_trademark']}, Proposed Trademark: {conflict['proposed_trademark']}")
-                st.write(f"Reasoning for Conflict: {conflict['reasoning']}\n")
+                st.write(f"Trademark Name : {conflict.get('Trademark name', 'N/A')}")
+                st.write(f"Trademark Status : {conflict.get('Trademark status', 'N/A')}")
+                st.write(f"Trademark Owner : {conflict.get('Trademark owner', 'N/A')}")
+                st.write(f"Trademark Class Number : {conflict.get('Trademark class Number', 'N/A')}")
+                st.write(f"{conflict.get('reasoning','N/A')}\n")
                 st.write("                                                                                   ")
                 st.write("-----------------------------------------------------------------------------------------------------------------------------------------------------")
             st.write("___________________________________________________________________________________________________________________________________________________________________________________")
@@ -383,9 +395,10 @@ if uploaded_file is not None:
             document.add_paragraph(f"\n\nTotal number of conflicts: {len(high_conflicts) + len(moderate_conflicts) + len(low_conflicts)}\n- High Conflicts: {len(high_conflicts)}\n- Moderate Conflicts: {len(moderate_conflicts)}\n- Low Conflicts: {len(low_conflicts)}\n")
             
             if len(high_conflicts) > 0:  
-                        document.add_heading('Trademarks with High Conflicts:')  
+                        document.add_heading('Trademarks with High Conflicts:', level=2)  
                         # Create a pandas DataFrame from the JSON list    
-                        df_high = pd.DataFrame(high_conflicts)  
+                        df_high = pd.DataFrame(high_conflicts) 
+                        df_high = df_high.drop(columns=['reasoning'])  
                         # Create a table in the Word document    
                         table_high = document.add_table(df_high.shape[0] + 1, df_high.shape[1])
                         # Set a predefined table style (with borders)  
@@ -401,7 +414,8 @@ if uploaded_file is not None:
             if len(moderate_conflicts) > 0:  
                         document.add_heading('Trademarks with Moderate Conflicts:', level=2)  
                         # Create a pandas DataFrame from the JSON list    
-                        df_moderate = pd.DataFrame(moderate_conflicts)  
+                        df_moderate = pd.DataFrame(moderate_conflicts)
+                        df_moderate = df_moderate.drop(columns=['reasoning'])  
                         # Create a table in the Word document    
                         table_moderate = document.add_table(df_moderate.shape[0] + 1, df_moderate.shape[1])
                         # Set a predefined table style (with borders)  
@@ -418,6 +432,7 @@ if uploaded_file is not None:
                         document.add_heading('Trademarks with Low Conflicts:', level=2)  
                         # Create a pandas DataFrame from the JSON list    
                         df_low = pd.DataFrame(low_conflicts)  
+                        df_low = df_low.drop(columns=['reasoning'])
                         # Create a table in the Word document    
                         table_low = document.add_table(df_low.shape[0] + 1, df_low.shape[1])
                         # Set a predefined table style (with borders)  
@@ -429,7 +444,25 @@ if uploaded_file is not None:
                         for i, row in df_low.iterrows():  
                             for j, value in enumerate(row):  
                                 table_low.cell(i + 1, j).text = str(value)
-
+                                
+            if len(high_conflicts) > 0:  
+                document.add_heading('Trademarks with High Conflicts Reasoning :', level=2)  
+                document.add_paragraph(json.dumps(high_conflicts, indent=4))   
+                st.write("                                                                                   ")  
+                st.write("------------------------------------------------------------------------------------------------------------------")  
+            
+            if len(moderate_conflicts) > 0:  
+                document.add_heading('Trademarks with Moderate Conflicts Reasoning :', level=2)  
+                document.add_paragraph(json.dumps(moderate_conflicts, indent=4))   
+                st.write("                                                                                   ")  
+                st.write("------------------------------------------------------------------------------------------------------------------")  
+            
+            if len(low_conflicts) > 0:  
+                document.add_heading('Trademarks with Low Conflicts Reasoning :', level=2)  
+                document.add_paragraph(json.dumps(low_conflicts, indent=4))   
+                st.write("                                                                                   ")  
+                st.write("------------------------------------------------------------------------------------------------------------------") 
+                
             doc_stream = BytesIO()
             document.save(doc_stream)
             doc_stream.seek(0)
