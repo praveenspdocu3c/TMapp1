@@ -1,3 +1,5 @@
+# Testing currently using Visiquan Document version
+
 from fileinput import filename
 import streamlit as st
 import json
@@ -19,6 +21,7 @@ openai.api_type = "azure"
 openai.api_key = api_key
 openai.api_base = azure_endpoint 
 openai.api_version = "2024-02-01"
+
 
 # Define Pydantic Model with Descriptions
 class TrademarkDetails(BaseModel):
