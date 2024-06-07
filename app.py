@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, ValidationError
 from typing import List, Dict, Union
 import base64
 from docx import Document  
+from docx.shared import Pt
 from io import BytesIO
 import re
 
@@ -18,7 +19,6 @@ openai.api_type = "azure"
 openai.api_key = api_key
 openai.api_base = azure_endpoint 
 openai.api_version = "2024-02-01"
-
 
 # Define Pydantic Model with Descriptions
 class TrademarkDetails(BaseModel):
@@ -38,33 +38,46 @@ def preprocess_text(text: str) -> str:
 
 def is_correct_format(page_text: str) -> bool:
     """ Check if the page is in the correct format for extracting trademark details """
-    required_fields = ["Register", "Owner", "Nice Classes", "Goods & Services"]
+    required_fields = ["Register", "Nice Classes", "Goods & Services"]
     return all(field in page_text for field in required_fields)
 
 def extract_trademark_details(page_text: str) -> Dict[str, Union[str, List[int]]]:
     """ Extract trademark details from the page text """
     details = {}
-    # Improved regex for trademark name
-    trademark_name_match = re.search(r'(?<=\n)([A-Z0-9\- ]+)(?=\n)', page_text)
+    
+    trademark_name_match = re.search(r"(?<=\n)([A-Za-z0-9'&!,\-. ]+)(?=\n)", page_text)
     details["trademark_name"] = trademark_name_match.group(1).strip() if trademark_name_match else ""
+    
     status_match = re.search(r'Status\s*(?:\n|:\s*)([A-Za-z]+)', page_text, re.IGNORECASE)
     details["status"] = status_match.group(1).strip() if status_match else ""
-    owner_match = re.search(r'Owner\s*(?:\n|:\s*)(.*)', page_text, re.IGNORECASE)
-    details["owner"] = owner_match.group(1).strip() if owner_match else ""
+    
+    owner_match = re.search(r'Holder\s*(?:\n|:\s*)(.*)', page_text, re.IGNORECASE)
+    if owner_match:
+        details["owner"] = owner_match.group(1).strip()
+    else:
+        owner_match = re.search(r'Owner\s*(?:\n|:\s*)(.*)', page_text, re.IGNORECASE)
+        details["owner"] = owner_match.group(1).strip() if owner_match else ""
 
-    # Capture multiple Nice Class numbers from different sections
-    nice_classes_match = re.search(r'Nice Classes\s*:?[\s\n]*([0-9,\s]+)', page_text, re.IGNORECASE)
+    nice_classes_text = ""
+    nice_classes_match = re.search(r'Nice Classes\s*(?:\n|:\s*)(\d+,\s*\d+(?:,\s*\d+)*)', page_text, re.IGNORECASE)
+    
     if nice_classes_match:
         nice_classes_text = nice_classes_match.group(1)
-        nice_classes = [int(cls) for cls in re.findall(r'\d+', nice_classes_text)]
-        details["international_class_number"] = nice_classes
+        nice_classes = [int(cls) for cls in nice_classes_text.split(",")]
     else:
-        details["international_class_number"] = []
+        single_class_match = re.search(r'Nice Classes\s*(?:\n|:\s*)(\d+)', page_text, re.IGNORECASE)
+        if single_class_match:
+            nice_classes_text = single_class_match.group(1)
+            nice_classes = [int(nice_classes_text)]
 
-    serial_number_match = re.search(r'Application#\s*(.*)', page_text, re.IGNORECASE)
+    details["international_class_number"] = nice_classes
+
+    serial_number_match = re.search(r'Registration#\s*(.*)', page_text, re.IGNORECASE)
     details["serial_number"] = serial_number_match.group(1).strip() if serial_number_match else ""
+
     goods_services_match = re.search(r'Goods & Services\s*English\s*(.*?)(?=\s*G&S translation|$)', page_text, re.IGNORECASE | re.DOTALL)
     details["goods_services"] = goods_services_match.group(1).strip() if goods_services_match else ""
+
     return details
 
 def read_pdf(file_path: str, exclude_header_footer: bool = True) -> str:
@@ -101,6 +114,7 @@ def parse_trademark_details(document_path: str) -> List[Dict[str, Union[str, Lis
 
     trademark_list = []
     for i, data in enumerate(all_extracted_data, start=1):
+        try:
             trademark_details = TrademarkDetails(
                 trademark_name=data.get("trademark_name", ""),
                 owner=data.get("owner", ""),
@@ -110,16 +124,19 @@ def parse_trademark_details(document_path: str) -> List[Dict[str, Union[str, Lis
                 goods_services=data.get("goods_services", ""),
                 page_number=data.get("page_number", 0)
             )
-            trademark_info = {
-                "trademark_name": trademark_details.trademark_name,
-                "owner": trademark_details.owner,
-                "status": trademark_details.status,
-                "serial_number": trademark_details.serial_number,
-                "international_class_number": trademark_details.international_class_number,
-                "goods_services": trademark_details.goods_services,
-                "page_number": trademark_details.page_number,
-            }
-            trademark_list.append(trademark_info)
+            if (trademark_details.trademark_name != "" and trademark_details.owner != "" and trademark_details.status != "" and trademark_details.goods_services != ""):
+                    trademark_info = {
+                        "trademark_name": trademark_details.trademark_name,
+                        "owner": trademark_details.owner,
+                        "status": trademark_details.status,
+                        "serial_number": trademark_details.serial_number,
+                        "international_class_number": trademark_details.international_class_number,
+                        "goods_services": trademark_details.goods_services,
+                        "page_number": trademark_details.page_number,
+                    }
+                    trademark_list.append(trademark_info)
+        except ValidationError as e:
+            print(f"Validation error for trademark {i}: {e}")
 
     return trademark_list
 
@@ -157,6 +174,7 @@ def compare_trademarks(existing_trademark: List[Dict[str, Union[str, List[int]]]
                                             - Example :\n Reasoning for Conflict:\n - The existing trademark "JOURNEY TO THE EDGE" contains the word "JOURNEY," which is a character-for-character match with the proposed trademark "JOURNEY" (Condition 1A satisfied).\n - The word "JOURNEY" is in the primary position in the existing trademark "JOURNEY TO THE EDGE," satisfying the revised Condition 1D.\n - The existing trademark is in International Class 18, which is the same class as the proposed trademark for luggage and carrying bags, satisfying Condition 2.\n - The goods/services of the existing trademark are related to carrying bags, which overlap with the goods/services of the proposed trademark, satisfying Condition 3A.\n - Both trademarks target the same market of consumers who are in need of carrying bags and related products, satisfying Condition 3B.\n Conflict Grade: High\n
                                             - Example :\n Reasoning for Conflict:\n - The existing trademark "JOURNEYMAN" contains the word "JOURNEY," but it is not a character-for-character match with the proposed trademark "JOURNEY" (Condition 1A not satisfied).\n - The term "JOURNEY" within "JOURNEYMAN" is not semantically equivalent to the standalone proposed trademark "JOURNEY" (Condition 1B not satisfied).\n - The term "JOURNEY" within "JOURNEYMAN" may be phonetically similar to the proposed trademark "JOURNEY," but as part of a compound word, it does not create a phonetic match for the entire proposed trademark (Condition 1C not satisfied).\n - The existing trademark and the proposed trademark are in the same International Class 18, which includes luggage and carrying bags (Condition 2 satisfied).\n - The existing trademark's goods/services include backpacks, which fall under the broader category of carrying bags, overlapping with the proposed trademark's goods/services (Condition 3A satisfied).\n - Both trademarks target the same market of consumers interested in carrying bags and luggage (Condition 3B satisfied).\n Conflict Grade: Moderate\n 
                                             - Example :\n Reasoning for Conflict:\n - The existing trademark "JOURNEY MARKET" contains the term "JOURNEY," which is a character-for-character match with the proposed trademark "JOURNEY" (Condition 1A satisfied).\n - The term "JOURNEY" in the existing trademark is in the primary position, satisfying the revised Condition 1D.\n - The existing trademark and the proposed trademark share the same International Class 35 for retail services, satisfying Condition 2.\n - The existing trademark's goods/services under Class 35 overlap with the proposed trademark's retail and online retail services, satisfying Condition 3B. However, the goods under Class 24 of the existing trademark do not overlap with the Class 18 goods of the proposed trademark, so Condition 3A is not satisfied.\n Conflict Grade: Moderate\n
+                                            - Example :\n Reasoning for Conflict:\n - The existing trademark "VIZICAINE" is not a character-for-character match with the proposed trademark "Visiquan" (Condition 1A not satisfied).\n - The existing trademark "VIZICAINE" is not semantically equivalent to the proposed trademark "Visiquan" (Condition 1B not satisfied).\n - The existing trademark "VIZICAINE" is phonetically similar to "Visiquan," which could lead to confusion (Condition 1C satisfied).\n - The proposed trademark "Visiquan" does not match the existing trademark in the primary position of a phrase (Condition 1D not applicable as neither trademark is a phrase).\n - Both trademarks are in the same Nice Class 5 for pharmaceutical compositions for ophthalmological use (Condition 2 satisfied).\n - The existing trademark's goods/services in Class 5 are for a pharmaceutical composition for ophthalmological use, which is similar to the proposed trademark's goods/services of ophthalmic drops to treat corneal ulcers in animals, satisfying Condition 3A.\n - Both trademarks target the pharmaceutical market with a focus on ophthalmology, satisfying Condition 3B.\n Conflict Grade: High\n
 
                                             Conflict Grade: Based on above reasoning (Low or Moderate or High)."""
                                             },
@@ -330,39 +348,48 @@ if uploaded_file is not None:
                             for j, value in enumerate(row):  
                                 table_low.cell(i + 1, j).text = str(value)
                         
+            def add_conflict_paragraph(document, conflict):  
+                p = document.add_paragraph(f"Trademark Name : {conflict.get('Trademark name', 'N/A')}")  
+                p.paragraph_format.line_spacing = Pt(18)  
+                p.paragraph_format.space_after = Pt(0)
+                p = document.add_paragraph(f"Trademark Status : {conflict.get('Trademark status', 'N/A')}")  
+                p.paragraph_format.line_spacing = Pt(18)  
+                p.paragraph_format.space_after = Pt(0)
+                p = document.add_paragraph(f"Trademark Owner : {conflict.get('Trademark owner', 'N/A')}")  
+                p.paragraph_format.line_spacing = Pt(18)  
+                p.paragraph_format.space_after = Pt(0)
+                p = document.add_paragraph(f"Trademark Class Number : {conflict.get('Trademark class Number', 'N/A')}")  
+                p.paragraph_format.line_spacing = Pt(18)
+                p.paragraph_format.space_after = Pt(0)  
+                p = document.add_paragraph(" ")  
+                p.paragraph_format.line_spacing = Pt(18)  
+                p.paragraph_format.space_after = Pt(0) 
+                p = document.add_paragraph(f"{conflict.get('reasoning','N/A')}\n")  
+                p.paragraph_format.line_spacing = Pt(18)  
+                p = document.add_paragraph(" ")  
+                p.paragraph_format.line_spacing = Pt(18)  
+            
             if len(high_conflicts) > 0:  
                 document.add_heading('Trademarks with High Conflicts Reasoning:', level=2)  
-                document.add_paragraph("                                                                                   ")
+                p = document.add_paragraph(" ")  
+                p.paragraph_format.line_spacing = Pt(18)  
                 for conflict in high_conflicts:  
-                    document.add_paragraph(f"Trademark Name : {conflict.get('Trademark name', 'N/A')}")
-                    document.add_paragraph(f"Trademark Status : {conflict.get('Trademark status', 'N/A')}")
-                    document.add_paragraph(f"Trademark Owner : {conflict.get('Trademark owner', 'N/A')}")
-                    document.add_paragraph(f"Trademark Class Number : {conflict.get('Trademark class Number', 'N/A')}")
-                    document.add_paragraph(f"{conflict.get('reasoning','N/A')}\n")
-                    document.add_paragraph("                                                                                   ")
-                      
+                    add_conflict_paragraph(document, conflict)  
+            
             if len(moderate_conflicts) > 0:  
-                document.add_heading('Trademarks with Moderate Conflicts Reasoning:', level=2)
-                document.add_paragraph("                                                                                   ")  
+                document.add_heading('Trademarks with Moderate Conflicts Reasoning:', level=2)  
+                p = document.add_paragraph(" ")  
+                p.paragraph_format.line_spacing = Pt(18)  
                 for conflict in moderate_conflicts:  
-                    document.add_paragraph(f"Trademark Name : {conflict.get('Trademark name', 'N/A')}")
-                    document.add_paragraph(f"Trademark Status : {conflict.get('Trademark status', 'N/A')}")
-                    document.add_paragraph(f"Trademark Owner : {conflict.get('Trademark owner', 'N/A')}")
-                    document.add_paragraph(f"Trademark Class Number : {conflict.get('Trademark class Number', 'N/A')}")
-                    document.add_paragraph(f"{conflict.get('reasoning','N/A')}\n")
-                    document.add_paragraph("                                                                                   ")
-                                        
+                    add_conflict_paragraph(document, conflict)  
+            
             if len(low_conflicts) > 0:  
                 document.add_heading('Trademarks with Low Conflicts Reasoning:', level=2)  
-                document.add_paragraph("                                                                                   ")
+                p = document.add_paragraph(" ")  
+                p.paragraph_format.line_spacing = Pt(18)  
                 for conflict in low_conflicts:  
-                    document.add_paragraph(f"Trademark Name : {conflict.get('Trademark name', 'N/A')}")
-                    document.add_paragraph(f"Trademark Status : {conflict.get('Trademark status', 'N/A')}")
-                    document.add_paragraph(f"Trademark Owner : {conflict.get('Trademark owner', 'N/A')}")
-                    document.add_paragraph(f"Trademark Class Number : {conflict.get('Trademark class Number', 'N/A')}")
-                    document.add_paragraph(f"{conflict.get('reasoning','N/A')}\n")
-                    document.add_paragraph("                                                                                   ")
-                          
+                    add_conflict_paragraph(document, conflict)       
+                                       
             filename = proposed_name
             doc_stream = BytesIO()
             document.save(doc_stream)
