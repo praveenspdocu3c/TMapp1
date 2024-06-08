@@ -388,7 +388,7 @@ if uploaded_files:
             doc_stream = BytesIO()  
             document.save(doc_stream)  
             doc_stream.seek(0)  
-            download_table = f'<a href="data:application/octet-stream;base64,{base64.b64encode(doc_stream.read()).decode()}" download="{filename + " Trademark Conflict Report"}.docx">Download Trademark Conflicts Report:{proposed_name}</a>'  
+            download_table = f'<a href="data:application/octet-stream;base64,{base64.b64encode(doc_stream.read()).decode()}" download="{filename + " Trademark Conflict Report"}.docx">Download Trademark Conflicts Report:{filename}</a>'  
             st.sidebar.markdown(download_table, unsafe_allow_html=True)  
             st.success(f"{proposed_name} Document conflict report successfully completed!")
             st.write("______________________________________________________________________________________________________________________________")
