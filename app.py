@@ -1,18 +1,16 @@
-# Testing currently using Visiquan Document version
-
-from fileinput import filename
-import streamlit as st
-import json
-import openai, pandas as pd
-import fitz  # PyMuPDF
-from pydantic import BaseModel, Field, ValidationError
-from typing import List, Dict, Union
-import base64
+import streamlit as st  
+import json  
+import openai  
+import pandas as pd  
+import fitz  # PyMuPDF  
+from pydantic import BaseModel, Field, ValidationError  
+from typing import List, Dict, Union  
+import base64  
 from docx import Document  
-from docx.shared import Pt
-from io import BytesIO
-import re
-
+from docx.shared import Pt  
+from io import BytesIO  
+import re  
+  
 azure_endpoint = "https://danielingitaraj.openai.azure.com/"
 api_key = "a5c4e09a50dd4e13a69e7ef19d07b48c"
 deployment_name = "GPT4"  
@@ -210,96 +208,89 @@ def compare_trademarks(existing_trademark: List[Dict[str, Union[str, List[int]]]
         'reasoning': reasoning
     }
 
-# Streamlit App
-st.title("Trademark Document Parser")
-
-# File upload
-uploaded_file = st.sidebar.file_uploader("Choose a PDF file", type="pdf")
-
-if uploaded_file is not None:
-    # Save uploaded file to a temporary file path
-    temp_file_path = f"temp_{uploaded_file.name}"
-    with open(temp_file_path, "wb") as f:
-        f.write(uploaded_file.read())
-
-    # Display proposed trademark details form
-    st.header("Proposed Trademark Details")
-    proposed_name = st.text_input("Proposed Trademark Name")
-    proposed_class = st.text_input("Proposed Trademark Class Number (comma-separated if multiple)")
-    proposed_goods_services = st.text_area("Proposed Trademark Goods/Services")
-
-    if st.button("Check Conflicts"):
-        if proposed_name and proposed_class and proposed_goods_services:
-            # Extract details from the uploaded PDF
-            existing_trademarks = parse_trademark_details(temp_file_path)
-            st.success('Existing Trademarks Data Extracted Successfully!')
-
-            # Display extracted details
-            with st.expander("Extracted Trademark Details"):
-              for trademark in existing_trademarks:
-                st.json(trademark)
-                st.text("___________________________________________________________________________________________________________________________________________________________________________________")
+def extract_proposed_trademark_details(file_path: str) -> Dict[str, Union[str, List[int]]]:
+    """ Extract proposed trademark details from the first page of the document """
+    proposed_details = {}
+    with fitz.open(file_path) as pdf_document:
+        if pdf_document.page_count > 0:
+            page = pdf_document.load_page(0)
+            page_text = preprocess_text(page.get_text())
             
-            high_conflicts = []
-            moderate_conflicts = []
-            low_conflicts = []
+            name_match = re.search(r'Name:\s*(.*?)(?=\s*Nice Classes:)', page_text)
+            if name_match:
+                proposed_details["proposed_trademark_name"] = name_match.group(1).strip()
+                
+            nice_classes_match = re.search(r'Nice Classes:\s*(\d+(?:,\s*\d+)*)', page_text)
+            if nice_classes_match:
+                proposed_details["proposed_nice_classes_number"] = nice_classes_match.group(1).strip()
+            
+            goods_services_match = re.search(r'Goods & Services:\s*(.*?)(?=\s*Registers|$)', page_text, re.IGNORECASE | re.DOTALL)
+            if goods_services_match:
+                proposed_details["proposed_goods_services"] = goods_services_match.group(1).strip()
+    
+    return proposed_details
+  
+# Streamlit App  
+st.title("Trademark Document Parser")  
+  
+# File upload  
+uploaded_files = st.sidebar.file_uploader("Choose PDF files", type="pdf", accept_multiple_files=True)  
+  
+if uploaded_files:  
+    if st.button("Check Conflicts", key="check_conflicts"):  
+        total_files = len(uploaded_files)  
+        progress_bar = st.progress(0)  
+        for i, uploaded_file in enumerate(uploaded_files):  
+            # Save uploaded file to a temporary file path  
+            temp_file_path = f"temp_{uploaded_file.name}"  
+            with open(temp_file_path, "wb") as f:  
+                f.write(uploaded_file.read())  
+              
+            proposed_trademark_details = extract_proposed_trademark_details(temp_file_path)  
+              
+            if proposed_trademark_details:  
+                proposed_name = proposed_trademark_details.get('proposed_trademark_name', '')  
+                proposed_class = proposed_trademark_details.get('proposed_nice_classes_number')  
+                proposed_goods_services = proposed_trademark_details.get('proposed_goods_services', '')  
+                with st.expander(f"Proposed Trademark Details for {uploaded_file.name}"):  
+                    st.write(f"Proposed Trademark name: {proposed_name}")  
+                    st.write(f"Proposed class-number: {proposed_class}")  
+                    st.write(f"Proposed Goods & Services: {proposed_goods_services}")  
+            else:  
+                st.error(f"Unable to extract Proposed Trademark Details for {uploaded_file.name}")  
+                continue  
+              
+            existing_trademarks = parse_trademark_details(temp_file_path)  
+            st.success(f"Existing Trademarks Data Extracted Successfully for {uploaded_file.name}!")  
+            # Display extracted details  
+                      
+            high_conflicts = []  
+            moderate_conflicts = []  
+            low_conflicts = []  
 
-            for existing_trademark in existing_trademarks:
-                conflict = compare_trademarks(existing_trademark , proposed_name , proposed_class , proposed_goods_services)
-                if conflict['conflict_grade'] == "High":
-                    high_conflicts.append(conflict)
-                elif conflict['conflict_grade'] == "Moderate":
-                    moderate_conflicts.append(conflict)
-                else:
-                    low_conflicts.append(conflict)
-            
-            st.sidebar.subheader("\n\nConflict Grades : \n")              
-            st.sidebar.markdown(f"High Conflicts : {len(high_conflicts)}")
-            st.sidebar.markdown(f"Moderate Conflicts : {len(moderate_conflicts)}")
-            st.sidebar.markdown(f"Low Conflicts : {len(low_conflicts)}")
-            
-            st.header("Conflict Grades : ")    
-            
-            st.subheader(f"\nTotal number of Conflicts: {len(high_conflicts) + len(moderate_conflicts) + len(low_conflicts)}\n")             
-                        
-            st.subheader(f"\nTotal number of High Conflicts: {len(high_conflicts)}\n")
-            for conflict in high_conflicts:
-                st.write(f"Trademark Name : {conflict.get('Trademark name', 'N/A')}")
-                st.write(f"Trademark Status : {conflict.get('Trademark status', 'N/A')}")
-                st.write(f"Trademark Owner : {conflict.get('Trademark owner', 'N/A')}")
-                st.write(f"Trademark Class Number : {conflict.get('Trademark class Number', 'N/A')}")
-                st.write(f"{conflict.get('reasoning','N/A')}\n")
-                st.write("                                                                                   ")
-                st.write("-----------------------------------------------------------------------------------------------------------------------------------------------------")
-            st.write("___________________________________________________________________________________________________________________________________________________________________________________")
+            for existing_trademark in existing_trademarks:  
+                conflict = compare_trademarks(existing_trademark, proposed_name, proposed_class, proposed_goods_services)  
+                if conflict['conflict_grade'] == "High":  
+                    high_conflicts.append(conflict)  
+                elif conflict['conflict_grade'] == "Moderate":  
+                    moderate_conflicts.append(conflict)  
+                else:  
+                    low_conflicts.append(conflict)  
 
-            st.subheader(f"\nTotal number of Moderate Conflicts: {len(moderate_conflicts)}\n")
-            for conflict in moderate_conflicts:
-                st.write(f"Trademark Name : {conflict.get('Trademark name', 'N/A')}")
-                st.write(f"Trademark Status : {conflict.get('Trademark status', 'N/A')}")
-                st.write(f"Trademark Owner : {conflict.get('Trademark owner', 'N/A')}")
-                st.write(f"Trademark Class Number : {conflict.get('Trademark class Number', 'N/A')}")
-                st.write(f"{conflict.get('reasoning','N/A')}\n")
-                st.write("                                                                                   ")
-                st.write("-----------------------------------------------------------------------------------------------------------------------------------------------------")
-            st.write("___________________________________________________________________________________________________________________________________________________________________________________")
-
-            st.subheader(f"\nTotal number of Low Conflicts: {len(low_conflicts)}\n")
-            for conflict in low_conflicts:
-                st.write(f"Trademark Name : {conflict.get('Trademark name', 'N/A')}")
-                st.write(f"Trademark Status : {conflict.get('Trademark status', 'N/A')}")
-                st.write(f"Trademark Owner : {conflict.get('Trademark owner', 'N/A')}")
-                st.write(f"Trademark Class Number : {conflict.get('Trademark class Number', 'N/A')}")
-                st.write(f"{conflict.get('reasoning','N/A')}\n")
-                st.write("                                                                                   ")
-                st.write("-----------------------------------------------------------------------------------------------------------------------------------------------------")
-            st.write("___________________________________________________________________________________________________________________________________________________________________________________")
-
-            document = Document()
+            st.sidebar.write("_________________________________________________")
+            st.sidebar.subheader("\n\nConflict Grades : \n")  
+            st.sidebar.markdown(f"File: {proposed_name}")  
+            st.sidebar.markdown(f"Total number of conflicts: {len(high_conflicts) + len(moderate_conflicts) + len(low_conflicts)}")
+            st.sidebar.markdown(f"High Conflicts: {len(high_conflicts)}")  
+            st.sidebar.markdown(f"Moderate Conflicts: {len(moderate_conflicts)}")  
+            st.sidebar.markdown(f"Low Conflicts: {len(low_conflicts)}")  
+            st.sidebar.write("_________________________________________________")
+  
+            document = Document()  
             
-            document.add_heading('Trademark Conflict List :')
-            document.add_paragraph(f"\n\nTotal number of conflicts: {len(high_conflicts) + len(moderate_conflicts) + len(low_conflicts)}\n- High Conflicts: {len(high_conflicts)}\n- Moderate Conflicts: {len(moderate_conflicts)}\n- Low Conflicts: {len(low_conflicts)}\n")
-            
+            document.add_heading(f'Trademark Conflict List for {proposed_name} :')            
+            document.add_paragraph(f"\n\nTotal number of conflicts: {len(high_conflicts) + len(moderate_conflicts) + len(low_conflicts)}\n- High Conflicts: {len(high_conflicts)}\n- Moderate Conflicts: {len(moderate_conflicts)}\n- Low Conflicts: {len(low_conflicts)}\n")  
+              
             if len(high_conflicts) > 0:  
                         document.add_heading('Trademarks with High Conflicts:', level=2)  
                         # Create a pandas DataFrame from the JSON list    
@@ -391,19 +382,15 @@ if uploaded_file is not None:
                 p = document.add_paragraph(" ")  
                 p.paragraph_format.line_spacing = Pt(18)  
                 for conflict in low_conflicts:  
-                    add_conflict_paragraph(document, conflict)       
-                                       
+                    add_conflict_paragraph(document, conflict)  
+  
             filename = proposed_name
-            doc_stream = BytesIO()
-            document.save(doc_stream)
-            doc_stream.seek(0)
-            download_table = f'<a href="data:application/octet-stream;base64,{base64.b64encode(doc_stream.read()).decode()}" download="{filename + " Trademark Conflict Report"}.docx">Download Trademark Conflits List</a>'
-            
-            st.markdown("""
-            <style>
-            table th {
-                text-align: center;
-            }
-            </style>
-            """, unsafe_allow_html=True)
-            st.sidebar.markdown(download_table, unsafe_allow_html=True)
+            doc_stream = BytesIO()  
+            document.save(doc_stream)  
+            doc_stream.seek(0)  
+            download_table = f'<a href="data:application/octet-stream;base64,{base64.b64encode(doc_stream.read()).decode()}" download="{filename + " Trademark Conflict Report"}.docx">Download Trademark Conflicts Report:{proposed_name}</a>'  
+            st.sidebar.markdown(download_table, unsafe_allow_html=True)  
+            st.success(f"{proposed_name} Document conflict report successfully completed!")
+            st.write("______________________________________________________________________________________________________________________________")
+  
+        st.success("All documents processed successfully!")  
