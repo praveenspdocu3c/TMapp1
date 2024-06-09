@@ -2,7 +2,8 @@ openai==0.28
 streamlit 
 json
 pandas 
-pymupdf 
 pydantic 
 python-docx
+PyMuPDF
+fileinput
 time
