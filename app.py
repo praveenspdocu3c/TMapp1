@@ -11,7 +11,7 @@ from docx import Document
 from docx.shared import Pt
 from io import BytesIO
 import re
-
+ 
 # Initialize AzureChatOpenAI
 azure_endpoint = "https://chat-gpt-a1.openai.azure.com/"
 api_key = "c09f91126e51468d88f57cb83a63ee36"
