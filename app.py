@@ -242,21 +242,21 @@ def parse_trademark_details(document_path: str) -> List[Dict[str, Union[str, Lis
 
         return trademark_list
 
-
-def extract_international_class_numbers_and_goods_services(page_text: str) -> Dict[str, Union[str, List[int]]]:
-    international_class_numbers = re.findall(r'International Class (\d+)', page_text)
-    international_class_numbers = [int(num) for num in international_class_numbers]
-
-    goods_services_match = re.search(r'Goods/Services:(.*?)Chronology', page_text, re.DOTALL)
-    goods_services_text = goods_services_match.group(1).strip() if goods_services_match else ""
-
+    
+def extract_international_class_numbers_and_goods_services(document: str) -> Dict[str, Union[List[int], str]]:
+    """ Extract the International Class Numbers and Goods/Services from the document """
+    class_numbers = []
+    goods_services = []
+    pattern = r'International Class (\d+): (.*?)(?=\nInternational Class \d+:|\n[A-Z][a-z]+:|\nLast Reported Owner:|\Z)'
+    matches = re.findall(pattern, document, re.DOTALL)
+    for match in matches:
+        class_number = int(match[0])
+        class_numbers.append(class_number)
+        goods_services.append(f"Class {class_number}: {match[1].strip()}")
     return {
-        "international_class_number": international_class_numbers,
-        "goods_services": goods_services_text
+        "international_class_numbers": class_numbers,
+        "goods_services": "\n".join(goods_services)
     }
-
-
-
 
 def compare_trademarks(existing_trademark: List[Dict[str, Union[str, List[int]]]], proposed_name: str, proposed_class: str, proposed_goods_services: str) -> List[Dict[str, int]]:
     proposed_classes = [int(c.strip()) for c in proposed_class.split(',')]
@@ -319,7 +319,7 @@ def compare_trademarks(existing_trademark: List[Dict[str, Union[str, List[int]]]
     )
     reasoning = response_reasoning.choices[0].message['content'].strip()
     conflict_grade = reasoning.split("Conflict Grade:", 1)[1].strip() 
-    progress_bar.progress(80)
+    progress_bar.progress(70)
 
     return {
         'Trademark name': existing_trademark['trademark_name'],
@@ -599,7 +599,7 @@ if uploaded_files:
                 for conflict in low_conflicts:  
                     add_conflict_paragraph(document, conflict)  
                     
-            for i in range(80,96):
+            for i in range(70,96):
                 time.sleep(0.5)
                 progress_bar.progress(i)  
                 
