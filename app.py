@@ -11,7 +11,7 @@ from docx import Document
 from docx.shared import Pt
 from io import BytesIO
 import re
- 
+
 # Initialize AzureChatOpenAI
 azure_endpoint = "https://chat-gpt-a1.openai.azure.com/"
 api_key = "c09f91126e51468d88f57cb83a63ee36"
@@ -319,6 +319,7 @@ def compare_trademarks(existing_trademark: List[Dict[str, Union[str, List[int]]]
     )
     reasoning = response_reasoning.choices[0].message['content'].strip()
     conflict_grade = reasoning.split("Conflict Grade:", 1)[1].strip() 
+    progress_bar.progress(80)
 
     return {
         'Trademark name': existing_trademark['trademark_name'],
@@ -490,12 +491,6 @@ if uploaded_files:
                     moderate_conflicts.append(conflict)  
                 else:  
                     low_conflicts.append(conflict)  
-            
-            for i in range(50,71):
-                time.sleep(0.5)
-                progress_bar.progress(i)  
-                
-            progress_bar.progress(75)
 
             st.sidebar.write("_________________________________________________")
             st.sidebar.subheader("\n\nConflict Grades : \n")  
@@ -604,7 +599,7 @@ if uploaded_files:
                 for conflict in low_conflicts:  
                     add_conflict_paragraph(document, conflict)  
                     
-            for i in range(75,96):
+            for i in range(80,96):
                 time.sleep(0.5)
                 progress_bar.progress(i)  
                 
@@ -617,10 +612,7 @@ if uploaded_files:
             download_table = f'<a href="data:application/octet-stream;base64,{base64.b64encode(doc_stream.read()).decode()}" download="{filename + " Trademark Conflict Report"}.docx">Download Trademark Conflicts Report:{filename}</a>'  
             st.sidebar.markdown(download_table, unsafe_allow_html=True)  
             st.success(f"{proposed_name} Document conflict report successfully completed!")
-            progress_bar.progress(0)
             st.write("______________________________________________________________________________________________________________________________")
   
+        progress_bar.progress(100)
         st.success("All documents processed successfully!")  
-
-
-
